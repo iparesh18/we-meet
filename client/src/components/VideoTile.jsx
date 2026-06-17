@@ -42,8 +42,10 @@ export default function VideoTile({ trackRef, compact = false, className = '' })
       {showVideo ? (
         <VideoTrack
           trackRef={trackRef}
-          className="h-full w-full object-cover"
-          style={isScreen ? { objectFit: 'contain', background: '#0f172a' } : undefined}
+          playsInline
+          // Screen share must never crop (text/slides stay readable) → contain.
+          // Camera tiles fill the frame → cover. No blur/scale/opacity filters.
+          className={`h-full w-full ${isScreen ? 'bg-slate-900 object-contain' : 'object-cover'}`}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900">

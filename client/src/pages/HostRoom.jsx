@@ -15,6 +15,7 @@ import RightPanel from '../components/RightPanel.jsx';
 import { api } from '../lib/api.js';
 import { getSocket } from '../lib/socket.js';
 import { saveHostKey, loadHostKey } from '../lib/storage.js';
+import { roomOptions } from '../lib/livekitQuality.js';
 
 function byStatus(list, status) {
   return list.filter((p) => p.status === status);
@@ -178,6 +179,15 @@ export default function HostRoom() {
     }
   };
 
+  const muteStudent = (s) => {
+    setBusy(s.id, 'mute');
+    getSocket().emit('host-mute-student', { classCode: code, hostKey, participantId: s.id }, (ack) => {
+      setBusy(s.id, null);
+      if (ack?.ok) showToast(`Muted ${ack.name || s.name}`, 'success');
+      else showToast(ack?.error || 'Could not mute student', 'error');
+    });
+  };
+
   const toggleLock = async () => {
     setLockBusy(true);
     const next = !classInfo?.isLocked;
@@ -338,6 +348,7 @@ export default function HostRoom() {
           onAllow={allow}
           onReject={reject}
           onRemove={remove}
+          onMute={muteStudent}
           onSendAnnouncement={sendAnnouncement}
           onClose={() => setPanelOpen(false)}
           busyIds={busyIds}
@@ -380,7 +391,7 @@ export default function HostRoom() {
         connect
         video
         audio
-        options={{ adaptiveStream: true, dynacast: true }}
+        options={roomOptions}
         onError={(e) => console.warn('[livekit] room error:', e?.message || e)}
         className="flex h-dvh flex-col bg-slate-950"
       >

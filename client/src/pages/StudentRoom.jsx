@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { LiveKitRoom, RoomAudioRenderer, useParticipants } from '@livekit/components-react';
-import { LogOut, Users, User, LayoutGrid, Megaphone, X } from 'lucide-react';
+import { LogOut, Users, User, LayoutGrid, Megaphone, X, MicOff } from 'lucide-react';
 import Logo from '../components/ui/Logo.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 import Stage from '../components/Stage.jsx';
@@ -9,9 +9,11 @@ import MediaControls from '../components/MediaControls.jsx';
 import ControlButton from '../components/ControlButton.jsx';
 import ConnectionStatus from '../components/ConnectionStatus.jsx';
 import VideoDisabledStage from '../components/VideoDisabledStage.jsx';
+import RemoteMuteHandler from '../components/RemoteMuteHandler.jsx';
 import { api } from '../lib/api.js';
 import { getSocket } from '../lib/socket.js';
 import { loadParticipant, clearParticipant } from '../lib/storage.js';
+import { roomOptions } from '../lib/livekitQuality.js';
 
 function ParticipantCount() {
   const participants = useParticipants();
@@ -33,8 +35,11 @@ export default function StudentRoom() {
   const [error, setError] = useState('');
   const [layout, setLayout] = useState('speaker');
   const [announcement, setAnnouncement] = useState(null);
+  const [mutedByHost, setMutedByHost] = useState(false);
   const prefs = participant?.prefs || { cam: true, mic: true };
   const leftRef = useRef(false);
+
+  const handleMutedByHost = useCallback(() => setMutedByHost(true), []);
 
   useEffect(() => {
     if (!participant?.participantId) {
@@ -162,6 +167,16 @@ export default function StudentRoom() {
     </div>
   );
 
+  const MutedBanner = mutedByHost && (
+    <div className="flex items-center gap-2 bg-amber-500 px-4 py-2.5 text-sm font-medium text-white">
+      <MicOff size={16} className="shrink-0" />
+      <p className="flex-1">You were muted by the host.</p>
+      <button onClick={() => setMutedByHost(false)} className="shrink-0 opacity-80 hover:opacity-100">
+        <X size={16} />
+      </button>
+    </div>
+  );
+
   if (phase === 'novideo') {
     return (
       <div className="flex h-dvh flex-col bg-slate-950">
@@ -184,15 +199,17 @@ export default function StudentRoom() {
       connect
       video={prefs.cam}
       audio={prefs.mic}
-      options={{ adaptiveStream: true, dynacast: true }}
+      options={roomOptions}
       onMediaDeviceFailure={(failure) =>
         console.warn('[livekit] media device unavailable:', failure)
       }
       onError={(e) => console.warn('[livekit] room error:', e?.message || e)}
       className="flex h-dvh flex-col bg-slate-950"
     >
+      <RemoteMuteHandler onMuted={handleMutedByHost} />
       {TopBar}
       {Banner}
+      {MutedBanner}
       <div className="min-h-0 flex-1">
         <Stage layout={layout} />
       </div>

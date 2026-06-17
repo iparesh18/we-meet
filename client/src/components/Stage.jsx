@@ -3,6 +3,7 @@ import { useTracks, useSpeakingParticipants } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { MonitorUp, Video } from 'lucide-react';
 import VideoTile from './VideoTile.jsx';
+import ScreenShareView from './ScreenShareView.jsx';
 
 function trackKey(t) {
   return `${t.participant?.identity || 'p'}-${t.source}-${t.publication?.trackSid || 'ph'}`;
@@ -104,7 +105,7 @@ export default function Stage({ layout = 'speaker' }) {
     return (
       <div className="flex h-full flex-col gap-3 p-3 sm:p-4">
         <div className="min-h-0 flex-[3]">
-          <VideoTile trackRef={screenTrack} className="h-full w-full" />
+          <ScreenShareView trackRef={screenTrack} className="h-full w-full" />
         </div>
         <div className="min-h-0 flex-[2] overflow-y-auto no-scrollbar">
           <div className={`grid gap-3 ${galleryCols(cameraTracks.length)}`}>
@@ -126,7 +127,15 @@ export default function Stage({ layout = 'speaker' }) {
     return (
       <div className="flex h-full flex-col gap-3 p-3 sm:flex-row sm:p-4">
         <div className="min-h-0 min-w-0 flex-1">
-          {main ? <VideoTile trackRef={main} className="h-full w-full" /> : <EmptyStage label="No active video" />}
+          {main ? (
+            screenTrack ? (
+              <ScreenShareView trackRef={screenTrack} className="h-full w-full" />
+            ) : (
+              <VideoTile trackRef={main} className="h-full w-full" />
+            )
+          ) : (
+            <EmptyStage label="No active video" />
+          )}
         </div>
         <div className="flex max-h-32 gap-3 overflow-x-auto no-scrollbar sm:max-h-none sm:w-44 sm:flex-col sm:overflow-y-auto lg:w-52">
           {others.map((t) => (
@@ -152,7 +161,11 @@ export default function Stage({ layout = 'speaker' }) {
     <div className="flex h-full flex-col gap-3 p-3 sm:p-4">
       <div className="relative min-h-0 flex-1">
         {main ? (
-          <VideoTile trackRef={main} className="h-full w-full" />
+          screenTrack ? (
+            <ScreenShareView trackRef={screenTrack} className="h-full w-full" />
+          ) : (
+            <VideoTile trackRef={main} className="h-full w-full" />
+          )
         ) : (
           <EmptyStage label="No active video" />
         )}

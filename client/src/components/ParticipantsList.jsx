@@ -1,7 +1,7 @@
-import { UserMinus, Users, Loader2, Circle } from 'lucide-react';
+import { UserMinus, Users, Loader2, Circle, MicOff } from 'lucide-react';
 import { initials, clock } from '../lib/format.js';
 
-export default function ParticipantsList({ admitted, onRemove, busyIds = {} }) {
+export default function ParticipantsList({ admitted, onRemove, onMute, busyIds = {} }) {
   if (!admitted.length) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-12 text-center text-slate-400">
@@ -39,14 +39,26 @@ export default function ParticipantsList({ admitted, onRemove, busyIds = {} }) {
                 {present ? `Joined ${clock(s.admittedAt)}` : 'Away'}
               </p>
             </div>
-            <button
-              onClick={() => onRemove(s)}
-              disabled={busy}
-              title="Remove from class"
-              className="grid h-9 w-9 place-items-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
-            >
-              {busy === 'remove' ? <Loader2 size={16} className="animate-spin" /> : <UserMinus size={16} />}
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              {onMute && (
+                <button
+                  onClick={() => onMute(s)}
+                  disabled={busy}
+                  title="Mute this student's microphone"
+                  className="grid h-9 w-9 place-items-center rounded-xl text-slate-400 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50"
+                >
+                  {busy === 'mute' ? <Loader2 size={16} className="animate-spin" /> : <MicOff size={16} />}
+                </button>
+              )}
+              <button
+                onClick={() => onRemove(s)}
+                disabled={busy}
+                title="Remove from class"
+                className="grid h-9 w-9 place-items-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+              >
+                {busy === 'remove' ? <Loader2 size={16} className="animate-spin" /> : <UserMinus size={16} />}
+              </button>
+            </div>
           </div>
         );
       })}

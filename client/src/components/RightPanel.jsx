@@ -17,6 +17,7 @@ export default function RightPanel({
   onAllow,
   onReject,
   onRemove,
+  onMute,
   onSendAnnouncement,
   onClose,
   busyIds,
@@ -68,7 +69,9 @@ export default function RightPanel({
         {tab === 'waiting' && (
           <WaitingRoomPanel waiting={waiting} onAllow={onAllow} onReject={onReject} busyIds={busyIds} />
         )}
-        {tab === 'people' && <ParticipantsList admitted={admitted} onRemove={onRemove} busyIds={busyIds} />}
+        {tab === 'people' && (
+          <ParticipantsList admitted={admitted} onRemove={onRemove} onMute={onMute} busyIds={busyIds} />
+        )}
         {tab === 'announce' && (
           <AnnouncementPanel announcements={announcements} onSend={onSendAnnouncement} />
         )}

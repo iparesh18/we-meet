@@ -4,6 +4,7 @@ import { safeEqual } from '../utils/security.js';
 import { sanitizeCode, sanitizeText } from '../utils/sanitize.js';
 import * as participantService from '../services/participantService.js';
 import * as classService from '../services/classService.js';
+import * as livekitService from '../services/livekitService.js';
 
 async function verifyHost(classCode, hostKey) {
   const cls = await store.getClassByCode(classCode);
@@ -107,6 +108,29 @@ export function initSocket(io) {
       if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
       await classService.endClass(cls.classCode);
       cb?.({ ok: true });
+    });
+
+    // ---- host mutes a single student's microphone (host-only) ----
+    socket.on('host-mute-student', async (payload = {}, cb) => {
+      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
+      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+
+      const p = await store.getParticipantById(payload.participantId);
+      if (!p || p.classCode !== cls.classCode) {
+        return cb?.({ ok: false, error: 'Student not found in this class' });
+      }
+
+      // 1) Best-effort hard enforcement at the SFU (no-op if LiveKit's server API
+      //    isn't configured). Mutes the published mic track server-side.
+      if (p.livekitIdentity) {
+        await livekitService.muteParticipantAudio(cls.roomName, p.livekitIdentity);
+      }
+
+      // 2) Reliable path: tell the student's client to mute its local mic and
+      //    show a notice. Works even when the LiveKit server API is unavailable.
+      getIO()?.to(rooms.participant(p.id)).emit('force-muted', { participantId: p.id });
+
+      cb?.({ ok: true, name: p.name });
     });
 
     // ---- screen share status relay (LiveKit carries the media itself) ----
