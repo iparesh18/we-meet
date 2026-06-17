@@ -1,6 +1,6 @@
 import { VideoTrack } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { MicOff, Mic, MonitorUp } from 'lucide-react';
+import { MicOff, Mic, MonitorUp, Pin, PinOff } from 'lucide-react';
 
 function initials(name) {
   if (!name) return '?';
@@ -17,8 +17,15 @@ function roleOf(participant) {
   }
 }
 
-export default function VideoTile({ trackRef, compact = false, className = '' }) {
+export default function VideoTile({
+  trackRef,
+  compact = false,
+  className = '',
+  onPin = null,
+  isPinned = false,
+}) {
   const participant = trackRef?.participant;
+  const identity = participant?.identity;
   const isScreen = trackRef?.source === Track.Source.ScreenShare;
   const pub = trackRef?.publication;
   // Render the video element whenever the source is published & unmuted — this
@@ -44,8 +51,11 @@ export default function VideoTile({ trackRef, compact = false, className = '' })
           trackRef={trackRef}
           playsInline
           // Screen share must never crop (text/slides stay readable) → contain.
-          // Camera tiles fill the frame → cover. No blur/scale/opacity filters.
-          className={`h-full w-full ${isScreen ? 'bg-slate-900 object-contain' : 'object-cover'}`}
+          // Camera tiles fill the frame → cover, and are mirrored for everyone
+          // (self-view + remote). Screen share is never mirrored.
+          className={`h-full w-full ${
+            isScreen ? 'bg-slate-900 object-contain' : 'object-cover -scale-x-100'
+          }`}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900">
@@ -57,6 +67,23 @@ export default function VideoTile({ trackRef, compact = false, className = '' })
             {initials(name)}
           </div>
         </div>
+      )}
+
+      {/* host-only pin / unpin control (top-right) */}
+      {onPin && identity && !isScreen && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPin(identity);
+          }}
+          title={isPinned ? 'Unpin from main view' : 'Pin to main view'}
+          aria-label={isPinned ? 'Unpin from main view' : 'Pin to main view'}
+          className={`absolute right-2 top-2 z-10 grid place-items-center rounded-lg text-white transition ${
+            compact ? 'h-7 w-7' : 'h-8 w-8'
+          } ${isPinned ? 'bg-brand-500 hover:bg-brand-600' : 'bg-black/45 hover:bg-black/70'}`}
+        >
+          {isPinned ? <PinOff size={compact ? 13 : 15} /> : <Pin size={compact ? 13 : 15} />}
+        </button>
       )}
 
       {/* top-left badges */}

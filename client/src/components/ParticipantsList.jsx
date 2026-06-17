@@ -1,7 +1,14 @@
 import { UserMinus, Users, Loader2, Circle, MicOff } from 'lucide-react';
 import { initials, clock } from '../lib/format.js';
 
-export default function ParticipantsList({ admitted, onRemove, onMute, busyIds = {} }) {
+export default function ParticipantsList({
+  admitted,
+  onRemove,
+  onMute,
+  onMuteAll,
+  muteAllBusy = false,
+  busyIds = {},
+}) {
   if (!admitted.length) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-12 text-center text-slate-400">
@@ -16,6 +23,17 @@ export default function ParticipantsList({ admitted, onRemove, onMute, busyIds =
 
   return (
     <div className="flex flex-col gap-2 p-3">
+      {onMuteAll && (
+        <button
+          onClick={onMuteAll}
+          disabled={muteAllBusy}
+          title="Mute every student's microphone"
+          className="mb-1 flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+        >
+          {muteAllBusy ? <Loader2 size={16} className="animate-spin" /> : <MicOff size={16} />}
+          Mute all students
+        </button>
+      )}
       {admitted.map((s) => {
         const busy = busyIds[s.id];
         const present = !s.leftAt;

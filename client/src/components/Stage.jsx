@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useTracks, useSpeakingParticipants } from '@livekit/components-react';
+import { useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { MonitorUp, Video } from 'lucide-react';
 import VideoTile from './VideoTile.jsx';
@@ -37,10 +37,16 @@ function EmptyStage({ label }) {
 
 /**
  * Renders the classroom stage for the given `layout`.
- * Screen share always takes the main stage when present (per spec), regardless
- * of the chosen camera layout.
+ *
+ * Main-view priority (does NOT follow the active speaker):
+ *   1. Screen share, whenever the host is sharing.
+ *   2. A student the host has explicitly pinned (`pinnedIdentity`, host view only).
+ *   3. The host's own camera — the default for everyone.
+ *
+ * `onTogglePin` is passed only from the host room, so pin controls and pinning
+ * are host-only; students always see the host (or the screen share) as main.
  */
-export default function Stage({ layout = 'speaker' }) {
+export default function Stage({ layout = 'speaker', pinnedIdentity = null, onTogglePin = null }) {
   const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
@@ -48,8 +54,6 @@ export default function Stage({ layout = 'speaker' }) {
     ],
     { onlySubscribed: false }
   );
-
-  const speakers = useSpeakingParticipants();
 
   const cameraTracks = useMemo(
     () => tracks.filter((t) => t.source === Track.Source.Camera),
@@ -62,17 +66,23 @@ export default function Stage({ layout = 'speaker' }) {
 
   const mainCamera = useMemo(() => {
     if (!cameraTracks.length) return null;
-    // 1) the loudest current speaker
-    if (speakers && speakers.length) {
-      const sp = cameraTracks.find((t) => t.participant?.identity === speakers[0]?.identity);
-      if (sp) return sp;
+    // 1) the host's explicit pin (host view only)
+    if (pinnedIdentity) {
+      const pinned = cameraTracks.find((t) => t.participant?.identity === pinnedIdentity);
+      if (pinned) return pinned;
     }
-    // 2) the host
+    // 2) the host's camera is always the default main view
     const host = cameraTracks.find((t) => roleOf(t.participant) === 'host');
     if (host) return host;
-    // 3) first available
+    // 3) fallback: first available camera
     return cameraTracks[0];
-  }, [cameraTracks, speakers]);
+  }, [cameraTracks, pinnedIdentity]);
+
+  // Pin controls are rendered only when the host passes `onTogglePin`.
+  const pinProps = (t) => ({
+    onPin: onTogglePin,
+    isPinned: !!pinnedIdentity && t?.participant?.identity === pinnedIdentity,
+  });
 
   if (!cameraTracks.length && !screenTrack) {
     return (
@@ -92,7 +102,7 @@ export default function Stage({ layout = 'speaker' }) {
         <div className={`grid gap-3 ${galleryCols(cameraTracks.length)}`}>
           {cameraTracks.map((t) => (
             <div key={trackKey(t)} className="aspect-video">
-              <VideoTile trackRef={t} className="h-full w-full" />
+              <VideoTile trackRef={t} className="h-full w-full" {...pinProps(t)} />
             </div>
           ))}
         </div>
@@ -111,7 +121,7 @@ export default function Stage({ layout = 'speaker' }) {
           <div className={`grid gap-3 ${galleryCols(cameraTracks.length)}`}>
             {cameraTracks.map((t) => (
               <div key={trackKey(t)} className="aspect-video">
-                <VideoTile trackRef={t} compact className="h-full w-full" />
+                <VideoTile trackRef={t} compact className="h-full w-full" {...pinProps(t)} />
               </div>
             ))}
           </div>
@@ -131,7 +141,7 @@ export default function Stage({ layout = 'speaker' }) {
             screenTrack ? (
               <ScreenShareView trackRef={screenTrack} className="h-full w-full" />
             ) : (
-              <VideoTile trackRef={main} className="h-full w-full" />
+              <VideoTile trackRef={main} className="h-full w-full" {...pinProps(main)} />
             )
           ) : (
             <EmptyStage label="No active video" />
@@ -140,7 +150,7 @@ export default function Stage({ layout = 'speaker' }) {
         <div className="flex max-h-32 gap-3 overflow-x-auto no-scrollbar sm:max-h-none sm:w-44 sm:flex-col sm:overflow-y-auto lg:w-52">
           {others.map((t) => (
             <div key={trackKey(t)} className="aspect-video w-44 shrink-0 sm:w-full">
-              <VideoTile trackRef={t} compact className="h-full w-full" />
+              <VideoTile trackRef={t} compact className="h-full w-full" {...pinProps(t)} />
             </div>
           ))}
           {!others.length && (
@@ -164,7 +174,7 @@ export default function Stage({ layout = 'speaker' }) {
           screenTrack ? (
             <ScreenShareView trackRef={screenTrack} className="h-full w-full" />
           ) : (
-            <VideoTile trackRef={main} className="h-full w-full" />
+            <VideoTile trackRef={main} className="h-full w-full" {...pinProps(main)} />
           )
         ) : (
           <EmptyStage label="No active video" />
@@ -179,7 +189,7 @@ export default function Stage({ layout = 'speaker' }) {
         <div className="flex h-24 shrink-0 gap-3 overflow-x-auto no-scrollbar sm:h-28">
           {strip.map((t) => (
             <div key={trackKey(t)} className="aspect-video h-full shrink-0">
-              <VideoTile trackRef={t} compact className="h-full w-full" />
+              <VideoTile trackRef={t} compact className="h-full w-full" {...pinProps(t)} />
             </div>
           ))}
         </div>

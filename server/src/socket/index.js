@@ -133,6 +133,26 @@ export function initSocket(io) {
       cb?.({ ok: true, name: p.name });
     });
 
+    // ---- host mutes every student at once (host-only) ----
+    socket.on('host-mute-all', async (payload = {}, cb) => {
+      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
+      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+
+      // 1) Reliable path: one broadcast to the class — every student's client
+      //    mutes its local mic + shows the notice. The host doesn't listen for
+      //    `force-muted`, so this only affects students.
+      getIO()?.to(rooms.class(cls.classCode)).emit('force-muted', { all: true });
+
+      // 2) Best-effort hard enforcement at the SFU for each admitted student.
+      const all = await store.getParticipantsByClass(cls.classCode);
+      const admitted = all.filter((p) => p.status === 'admitted' && p.livekitIdentity);
+      await Promise.all(
+        admitted.map((p) => livekitService.muteParticipantAudio(cls.roomName, p.livekitIdentity))
+      );
+
+      cb?.({ ok: true, count: admitted.length });
+    });
+
     // ---- screen share status relay (LiveKit carries the media itself) ----
     socket.on('host-screen-share', async (payload = {}) => {
       const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);

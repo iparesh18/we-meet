@@ -40,6 +40,7 @@ export default function HostRoom() {
   const [lockBusy, setLockBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [layout, setLayout] = useState('speaker');
+  const [pinnedIdentity, setPinnedIdentity] = useState(null);
   const [panelOpen, setPanelOpen] = useState(
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
@@ -52,6 +53,11 @@ export default function HostRoom() {
     setToast({ message, kind });
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3200);
+  }, []);
+
+  // Host-only: pin a participant to the main view (toggles off if already pinned).
+  const togglePin = useCallback((identity) => {
+    setPinnedIdentity((cur) => (cur === identity ? null : identity));
   }, []);
 
   // ---- bootstrap ----
@@ -185,6 +191,16 @@ export default function HostRoom() {
       setBusy(s.id, null);
       if (ack?.ok) showToast(`Muted ${ack.name || s.name}`, 'success');
       else showToast(ack?.error || 'Could not mute student', 'error');
+    });
+  };
+
+  const [muteAllBusy, setMuteAllBusy] = useState(false);
+  const muteAll = () => {
+    setMuteAllBusy(true);
+    getSocket().emit('host-mute-all', { classCode: code, hostKey }, (ack) => {
+      setMuteAllBusy(false);
+      if (ack?.ok) showToast(`Muted all students (${ack.count})`, 'success');
+      else showToast(ack?.error || 'Could not mute students', 'error');
     });
   };
 
@@ -349,6 +365,8 @@ export default function HostRoom() {
           onReject={reject}
           onRemove={remove}
           onMute={muteStudent}
+          onMuteAll={muteAll}
+          muteAllBusy={muteAllBusy}
           onSendAnnouncement={sendAnnouncement}
           onClose={() => setPanelOpen(false)}
           busyIds={busyIds}
@@ -399,7 +417,7 @@ export default function HostRoom() {
         <div className="flex min-h-0 flex-1">
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1">
-              <Stage layout={layout} />
+              <Stage layout={layout} pinnedIdentity={pinnedIdentity} onTogglePin={togglePin} />
             </div>
             {controlBar}
           </div>
