@@ -1,0 +1,14 @@
+{
+  "name": "swastik",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Swastik — teacher-hosted online classes (React + Vite + LiveKit + Socket.IO + Express + MongoDB)",
+  "scripts": {
+    "setup": "npm --prefix server install && npm --prefix client install",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "start:server": "npm --prefix server start",
+    "build": "npm --prefix client run build",
+    "livekit": "docker compose -f docker-compose.livekit.yml up"
+  }
+}

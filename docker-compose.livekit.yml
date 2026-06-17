@@ -1,0 +1,17 @@
+# Local LiveKit dev server for Swastik.
+# Runs in --dev mode, which uses the API key/secret pair "devkey" / "secret"
+# (these already match server/.env and client/.env).
+#
+#   docker compose -f docker-compose.livekit.yml up
+#
+# Then open http://localhost:3000 — host & student video will work.
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: swastik-livekit
+    command: --dev --node-ip 127.0.0.1
+    restart: unless-stopped
+    ports:
+      - '7880:7880' # signaling (ws)
+      - '7881:7881' # TCP fallback for media
+      - '7882:7882/udp' # UDP media
