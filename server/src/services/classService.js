@@ -49,7 +49,7 @@ export async function getPublic(classCode) {
   return publicView(cls);
 }
 
-export async function getForHost(classCode) {
+export async function getForHost(classCode, { includePrivate = true } = {}) {
   const cls = await store.getClassByCode(classCode);
   if (!cls) throw new ApiError(404, 'Class not found');
   const participants = await store.getParticipantsByClass(classCode);
@@ -57,7 +57,9 @@ export async function getForHost(classCode) {
     class: {
       ...publicView(cls),
       inviteLink: cls.inviteLink,
-      privateHostLink: cls.privateHostLink,
+      // The private host link embeds the host key — only expose it to the host,
+      // never to a captain opening the same control view.
+      ...(includePrivate ? { privateHostLink: cls.privateHostLink } : {}),
     },
     participants,
   };

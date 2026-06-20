@@ -45,8 +45,18 @@ function EmptyStage({ label }) {
  *
  * `onTogglePin` is passed only from the host room, so pin controls and pinning
  * are host-only; students always see the host (or the screen share) as main.
+ *
+ * When `studentView` is set, the stage only ever shows the host, any captains
+ * (co-hosts), and the student's own self-view — other students are filtered out
+ * (the SFU also blocks the underlying subscriptions; see StudentPrivacyGuard).
+ * The host view leaves `studentView` off and therefore sees everyone.
  */
-export default function Stage({ layout = 'speaker', pinnedIdentity = null, onTogglePin = null }) {
+export default function Stage({
+  layout = 'speaker',
+  pinnedIdentity = null,
+  onTogglePin = null,
+  studentView = false,
+}) {
   const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
@@ -55,13 +65,24 @@ export default function Stage({ layout = 'speaker', pinnedIdentity = null, onTog
     { onlySubscribed: false }
   );
 
+  // Students only ever see the host and captains (camera + screen share) plus
+  // their own tile; other students are filtered out.
+  const visibleTracks = useMemo(() => {
+    if (!studentView) return tracks;
+    return tracks.filter((t) => {
+      if (t.participant?.isLocal) return true;
+      const role = roleOf(t.participant);
+      return role === 'host' || role === 'captain';
+    });
+  }, [tracks, studentView]);
+
   const cameraTracks = useMemo(
-    () => tracks.filter((t) => t.source === Track.Source.Camera),
-    [tracks]
+    () => visibleTracks.filter((t) => t.source === Track.Source.Camera),
+    [visibleTracks]
   );
   const screenTrack = useMemo(
-    () => tracks.find((t) => t.source === Track.Source.ScreenShare) || null,
-    [tracks]
+    () => visibleTracks.find((t) => t.source === Track.Source.ScreenShare) || null,
+    [visibleTracks]
   );
 
   const mainCamera = useMemo(() => {

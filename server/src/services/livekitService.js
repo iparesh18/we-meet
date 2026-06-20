@@ -22,6 +22,22 @@ export function configured() {
   return isLivekitConfigured();
 }
 
+/**
+ * The LiveKit identity used for a class host. Deterministic so students can
+ * grant the host (and only the host) permission to subscribe to their tracks.
+ */
+export function hostIdentity(classCode) {
+  return `host-${classCode}`;
+}
+
+/**
+ * The LiveKit identity for a captain (co-host). Deterministic so students can
+ * grant captains permission to subscribe to their tracks (see StudentPrivacyGuard).
+ */
+export function captainIdentity(participantId) {
+  return `captain-${participantId}`;
+}
+
 export async function createToken({ room, identity, name, role }) {
   if (!isLivekitConfigured()) {
     throw new ApiError(503, 'LiveKit is not configured on the server', {
@@ -40,7 +56,8 @@ export async function createToken({ room, identity, name, role }) {
     canPublish: true,
     canSubscribe: true,
     canPublishData: true,
-    roomAdmin: role === 'host',
+    // Captains are co-hosts, so they get room-admin like the host.
+    roomAdmin: role === 'host' || role === 'captain',
   });
   const token = await at.toJwt();
   return { token, url: config.livekit.url, identity };

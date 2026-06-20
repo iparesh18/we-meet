@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { LiveKitRoom, RoomAudioRenderer } from '@livekit/components-react';
-import { Users, Clock, ShieldAlert, CheckCircle2, Mic, Video, MonitorUp } from 'lucide-react';
+import { Users, Clock, CheckCircle2, Crown, Mic, Video, MonitorUp } from 'lucide-react';
 import Logo from '../components/ui/Logo.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 import CopyButton from '../components/ui/CopyButton.jsx';
@@ -14,22 +14,32 @@ import HostControlBar from '../components/HostControlBar.jsx';
 import RightPanel from '../components/RightPanel.jsx';
 import { api } from '../lib/api.js';
 import { getSocket } from '../lib/socket.js';
-import { saveHostKey, loadHostKey } from '../lib/storage.js';
+import { loadParticipant } from '../lib/storage.js';
 import { roomOptions } from '../lib/livekitQuality.js';
 
+/**
+ * The co-host ("captain") control view. A student the host promoted lands here:
+ * it mirrors the host room (roster, mute, lock, attendance, announcements,
+ * screen share, end) but is authorized by the captain's own participant id
+ * instead of a host key. Promoting/demoting other captains stays host-only, so
+ * the crown control is deliberately not rendered here.
+ *
+ * If the captain is demoted (or never was one) they are sent back to the normal
+ * student room.
+ */
 function byStatus(list, status) {
   return list.filter((p) => p.status === status);
 }
 
-export default function HostRoom() {
+export default function CaptainRoom() {
   const { classCode } = useParams();
   const code = (classCode || '').toUpperCase();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const participant = loadParticipant(code);
+  const captainId = participant?.participantId;
+  const prefs = participant?.prefs || { cam: true, mic: true };
 
-  const hostKey = searchParams.get('hostKey') || loadHostKey(code) || '';
-
-  const [phase, setPhase] = useState('loading'); // loading | live | novideo | denied | error
+  const [phase, setPhase] = useState('loading'); // loading | live | novideo | error
   const [error, setError] = useState('');
   const [conn, setConn] = useState(null);
   const [classInfo, setClassInfo] = useState(null);
@@ -46,6 +56,7 @@ export default function HostRoom() {
   );
   const [toast, setToast] = useState(null);
 
+  const auth = { captainId };
   const inviteUrl = `${window.location.origin}/join/${code}`;
   const toastTimer = useRef(null);
 
@@ -55,15 +66,14 @@ export default function HostRoom() {
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
 
-  // Host-only: pin a participant to the main view (toggles off if already pinned).
   const togglePin = useCallback((identity) => {
     setPinnedIdentity((cur) => (cur === identity ? null : identity));
   }, []);
 
   // ---- bootstrap ----
   useEffect(() => {
-    if (!hostKey) {
-      setPhase('denied');
+    if (!captainId) {
+      navigate(`/join/${code}`, { replace: true });
       return;
     }
     let active = true;
@@ -71,39 +81,34 @@ export default function HostRoom() {
 
     (async () => {
       try {
-        const data = await api.getHostClass(code, hostKey);
+        const tok = await api.captainToken(code, captainId, participant.name);
         if (!active) return;
-        saveHostKey(code, hostKey);
-        setClassInfo(data.class);
-        setWaiting(byStatus(data.participants, 'waiting'));
-        setAdmitted(byStatus(data.participants, 'admitted'));
-
-        // Host LiveKit token
+        setConn({ token: tok.token, url: tok.url });
+        setPhase('live');
+        // Lock state for the control bar (best-effort; roster comes over sockets).
         try {
-          const tok = await api.hostToken(code, hostKey, 'Host (Teacher)');
-          if (!active) return;
-          setConn({ token: tok.token, url: tok.url });
-          setPhase('live');
-        } catch (tokErr) {
-          if (!active) return;
-          if (tokErr.status === 503) setPhase('novideo');
-          else {
-            setError(tokErr.message);
-            setPhase('error');
-          }
+          const data = await api.getHostClass(code, auth);
+          if (active) setClassInfo(data.class);
+        } catch {
+          /* non-fatal — keep going without lock state */
         }
       } catch (e) {
         if (!active) return;
-        if (e.status === 403) setPhase('denied');
-        else {
-          setError(e.message || 'Could not open the host room.');
+        if (e.status === 503) {
+          setPhase('novideo');
+        } else if (e.details?.reason === 'not_captain' || e.status === 403) {
+          navigate(`/student/${code}`, { replace: true });
+        } else if (e.details?.reason === 'ended' || e.status === 410) {
+          navigate('/ended', { replace: true });
+        } else {
+          setError(e.message || 'Could not open the captain controls.');
           setPhase('error');
         }
       }
     })();
 
     const joinRoom = () =>
-      socket.emit('host-join-room', { classCode: code, hostKey }, (ack) => {
+      socket.emit('captain-join-room', { classCode: code, captainId }, (ack) => {
         if (ack?.ok) {
           setWaiting(ack.waiting || []);
           setAdmitted(ack.admitted || []);
@@ -119,6 +124,10 @@ export default function HostRoom() {
     const onEnded = () => navigate('/ended', { replace: true });
     const onAnnouncement = (a) => setAnnouncements((prev) => [...prev, a]);
     const onConnect = () => joinRoom();
+    // Host demoted us back to a regular student — return to the student room.
+    const onDemoted = () => navigate(`/student/${code}`, { replace: true });
+    // If we get removed entirely, leave for the removed page.
+    const onRemoved = () => navigate('/removed', { replace: true });
 
     socket.on('new-waiting-student', onNewWaiting);
     socket.on('waiting-list-updated', onWaitingUpdated);
@@ -126,6 +135,8 @@ export default function HostRoom() {
     socket.on('room-ended', onEnded);
     socket.on('announcement', onAnnouncement);
     socket.on('connect', onConnect);
+    socket.on('captain-demoted', onDemoted);
+    socket.on('student-removed', onRemoved);
 
     return () => {
       active = false;
@@ -135,12 +146,14 @@ export default function HostRoom() {
       socket.off('room-ended', onEnded);
       socket.off('announcement', onAnnouncement);
       socket.off('connect', onConnect);
+      socket.off('captain-demoted', onDemoted);
+      socket.off('student-removed', onRemoved);
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
-  // ---- host actions ----
+  // ---- control actions (authorized by captainId) ----
   const setBusy = (id, value) =>
     setBusyIds((prev) => {
       const next = { ...prev };
@@ -151,9 +164,9 @@ export default function HostRoom() {
 
   const allow = async (s) => {
     setBusy(s.id, 'allow');
-    setWaiting((w) => w.filter((p) => p.id !== s.id)); // optimistic
+    setWaiting((w) => w.filter((p) => p.id !== s.id));
     try {
-      await api.admit(s.id, code, hostKey);
+      await api.admit(s.id, code, auth);
     } catch (e) {
       showToast(e.message || 'Could not admit student', 'error');
     } finally {
@@ -163,9 +176,9 @@ export default function HostRoom() {
 
   const reject = async (s) => {
     setBusy(s.id, 'reject');
-    setWaiting((w) => w.filter((p) => p.id !== s.id)); // optimistic
+    setWaiting((w) => w.filter((p) => p.id !== s.id));
     try {
-      await api.reject(s.id, code, hostKey);
+      await api.reject(s.id, code, auth);
     } catch (e) {
       showToast(e.message || 'Could not reject student', 'error');
     } finally {
@@ -175,9 +188,9 @@ export default function HostRoom() {
 
   const remove = async (s) => {
     setBusy(s.id, 'remove');
-    setAdmitted((a) => a.filter((p) => p.id !== s.id)); // optimistic
+    setAdmitted((a) => a.filter((p) => p.id !== s.id));
     try {
-      await api.remove(s.id, code, hostKey);
+      await api.remove(s.id, code, auth);
     } catch (e) {
       showToast(e.message || 'Could not remove student', 'error');
     } finally {
@@ -187,35 +200,17 @@ export default function HostRoom() {
 
   const muteStudent = (s) => {
     setBusy(s.id, 'mute');
-    getSocket().emit('host-mute-student', { classCode: code, hostKey, participantId: s.id }, (ack) => {
+    getSocket().emit('host-mute-student', { classCode: code, captainId, participantId: s.id }, (ack) => {
       setBusy(s.id, null);
       if (ack?.ok) showToast(`Muted ${ack.name || s.name}`, 'success');
       else showToast(ack?.error || 'Could not mute student', 'error');
     });
   };
 
-  const makeCaptain = (s) => {
-    setBusy(s.id, 'captain');
-    getSocket().emit('host-make-captain', { classCode: code, hostKey, participantId: s.id }, (ack) => {
-      setBusy(s.id, null);
-      if (ack?.ok) showToast(`${ack.name || s.name} is now a captain (co-host)`, 'success');
-      else showToast(ack?.error || 'Could not make captain', 'error');
-    });
-  };
-
-  const removeCaptain = (s) => {
-    setBusy(s.id, 'captain');
-    getSocket().emit('host-remove-captain', { classCode: code, hostKey, participantId: s.id }, (ack) => {
-      setBusy(s.id, null);
-      if (ack?.ok) showToast(`${ack.name || s.name} is no longer a captain`, 'info');
-      else showToast(ack?.error || 'Could not remove captain', 'error');
-    });
-  };
-
   const [muteAllBusy, setMuteAllBusy] = useState(false);
   const muteAll = () => {
     setMuteAllBusy(true);
-    getSocket().emit('host-mute-all', { classCode: code, hostKey }, (ack) => {
+    getSocket().emit('host-mute-all', { classCode: code, captainId }, (ack) => {
       setMuteAllBusy(false);
       if (ack?.ok) showToast(`Muted all students (${ack.count})`, 'success');
       else showToast(ack?.error || 'Could not mute students', 'error');
@@ -226,7 +221,7 @@ export default function HostRoom() {
     setLockBusy(true);
     const next = !classInfo?.isLocked;
     try {
-      const updated = next ? await api.lock(code, hostKey) : await api.unlock(code, hostKey);
+      const updated = next ? await api.lock(code, auth) : await api.unlock(code, auth);
       setClassInfo((c) => ({ ...c, isLocked: updated.isLocked }));
       showToast(updated.isLocked ? 'Room locked — no new students can join' : 'Room unlocked', 'info');
     } catch (e) {
@@ -239,10 +234,7 @@ export default function HostRoom() {
   const downloadAttendance = async () => {
     setDownloading(true);
     try {
-      const [xlsxMod, data] = await Promise.all([
-        import('xlsx'),
-        api.attendance(code, hostKey),
-      ]);
+      const [xlsxMod, data] = await Promise.all([import('xlsx'), api.attendance(code, auth)]);
       const XLSX = xlsxMod.default || xlsxMod;
       const ws = XLSX.utils.json_to_sheet(data.rows, { header: data.columns });
       ws['!cols'] = data.columns.map((c) => ({ wch: Math.max(c.length + 2, 16) }));
@@ -260,7 +252,7 @@ export default function HostRoom() {
   const endClass = async () => {
     if (!window.confirm('End the class for everyone? This cannot be undone.')) return;
     try {
-      await api.end(code, hostKey);
+      await api.end(code, auth);
       navigate('/ended', { replace: true });
     } catch (e) {
       showToast(e.message || 'Could not end the class', 'error');
@@ -268,11 +260,11 @@ export default function HostRoom() {
   };
 
   const sendAnnouncement = (message) => {
-    getSocket().emit('host-announcement', { classCode: code, hostKey, message });
+    getSocket().emit('host-announcement', { classCode: code, captainId, message });
   };
 
   const onScreenShareChange = (activeShare) => {
-    getSocket().emit('host-screen-share', { classCode: code, hostKey, active: activeShare });
+    getSocket().emit('host-screen-share', { classCode: code, captainId, active: activeShare });
     if (activeShare) setLayout('screen');
   };
 
@@ -282,27 +274,7 @@ export default function HostRoom() {
       <div className="grid min-h-dvh place-items-center bg-slate-900 text-slate-300">
         <div className="flex flex-col items-center gap-3">
           <Spinner size={28} className="text-brand-400" />
-          <p className="text-sm">Opening your classroom…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (phase === 'denied') {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-mesh px-5">
-        <div className="w-full max-w-md rounded-3xl border border-slate-100 bg-white/80 p-8 text-center shadow-card backdrop-blur-xl">
-          <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-red-100 text-red-500">
-            <ShieldAlert size={32} />
-          </div>
-          <h1 className="text-xl font-extrabold text-slate-900">Host access required</h1>
-          <p className="mt-2 text-slate-500">
-            This page needs a valid private host link. Only the teacher who started the class can
-            control it. Please open the private host link you received when creating the class.
-          </p>
-          <button onClick={() => navigate('/')} className="btn btn-primary mt-6 w-full">
-            Start a new class
-          </button>
+          <p className="text-sm">Opening captain controls…</p>
         </div>
       </div>
     );
@@ -314,8 +286,8 @@ export default function HostRoom() {
         <div>
           <p className="text-lg font-semibold text-white">Something went wrong</p>
           <p className="mt-2 text-sm text-slate-400">{error}</p>
-          <button onClick={() => navigate('/')} className="btn btn-primary mt-6">
-            Back to home
+          <button onClick={() => navigate(`/student/${code}`)} className="btn btn-primary mt-6">
+            Back to class
           </button>
         </div>
       </div>
@@ -331,6 +303,9 @@ export default function HostRoom() {
         <Logo light />
       </div>
       <div className="flex flex-1 items-center justify-end gap-2 overflow-x-auto no-scrollbar">
+        <span className="chip bg-brand-500 text-xs text-white">
+          <Crown size={14} /> Captain
+        </span>
         {phase === 'live' && <ConnectionStatus />}
         {locked && <span className="chip bg-amber-500/90 text-xs text-white">Locked</span>}
         <span className="chip hidden bg-white/10 text-xs text-white sm:inline-flex">
@@ -369,11 +344,7 @@ export default function HostRoom() {
 
   const Panel = panelOpen && (
     <>
-      {/* mobile slide-over backdrop */}
-      <div
-        className="fixed inset-0 z-30 bg-black/40 lg:hidden"
-        onClick={() => setPanelOpen(false)}
-      />
+      <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setPanelOpen(false)} />
       <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-sm border-l border-slate-200 bg-white shadow-xl lg:static lg:z-auto lg:w-80 lg:shadow-none xl:w-96">
         <RightPanel
           waiting={waiting}
@@ -384,9 +355,6 @@ export default function HostRoom() {
           onRemove={remove}
           onMute={muteStudent}
           onMuteAll={muteAll}
-          onMakeCaptain={makeCaptain}
-          onRemoveCaptain={removeCaptain}
-          muteAllBusy={muteAllBusy}
           onSendAnnouncement={sendAnnouncement}
           onClose={() => setPanelOpen(false)}
           busyIds={busyIds}
@@ -419,17 +387,16 @@ export default function HostRoom() {
     />
   );
 
-  // Live: LiveKitRoom is the outer container so the top bar (ConnectionStatus)
-  // and everything else sit inside the Room context.
   if (phase === 'live') {
     return (
       <LiveKitRoom
         serverUrl={conn.url}
         token={conn.token}
         connect
-        video
-        audio
+        video={prefs.cam}
+        audio={prefs.mic}
         options={roomOptions}
+        onMediaDeviceFailure={(failure) => console.warn('[livekit] media device unavailable:', failure)}
         onError={(e) => console.warn('[livekit] room error:', e?.message || e)}
         className="flex h-dvh flex-col bg-slate-950"
       >

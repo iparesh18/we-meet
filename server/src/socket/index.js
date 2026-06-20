@@ -13,6 +13,45 @@ async function verifyHost(classCode, hostKey) {
   return cls;
 }
 
+/**
+ * Authorizes an action that the host OR a captain may perform. Accepts either a
+ * valid host key or a `captainId` that maps to an admitted captain of the class.
+ * Returns the class (re-checked live, so demotion revokes access immediately) or
+ * null. Use `verifyHost` for host-only actions (promote/demote a captain).
+ */
+async function verifyController(classCode, payload = {}) {
+  const cls = await store.getClassByCode(classCode);
+  if (!cls) return null;
+  if (payload.hostKey && safeEqual(String(payload.hostKey), cls.hostKey)) return cls;
+  if (payload.captainId) {
+    const p = await store.getParticipantById(payload.captainId);
+    if (p && p.classCode === cls.classCode && p.role === 'captain' && p.status === 'admitted') {
+      return cls;
+    }
+  }
+  return null;
+}
+
+/** Roster snapshot returned when a host/captain joins their control channel. */
+async function roomSnapshot(classCode) {
+  const all = await store.getParticipantsByClass(classCode);
+  return {
+    waiting: all
+      .filter((p) => p.status === 'waiting')
+      .map((p) => ({ id: p.id, name: p.name, requestedAt: p.requestedAt, status: p.status })),
+    admitted: all
+      .filter((p) => p.status === 'admitted')
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        admittedAt: p.admittedAt,
+        leftAt: p.leftAt,
+        status: p.status,
+        role: p.role || 'student',
+      })),
+  };
+}
+
 export function initSocket(io) {
   setIO(io);
 
@@ -30,16 +69,47 @@ export function initSocket(io) {
       socket.join(rooms.host(classCode));
       socket.join(rooms.class(classCode));
 
-      const all = await store.getParticipantsByClass(classCode);
-      cb?.({
-        ok: true,
-        waiting: all
-          .filter((p) => p.status === 'waiting')
-          .map((p) => ({ id: p.id, name: p.name, requestedAt: p.requestedAt, status: p.status })),
-        admitted: all
-          .filter((p) => p.status === 'admitted')
-          .map((p) => ({ id: p.id, name: p.name, admittedAt: p.admittedAt, leftAt: p.leftAt, status: p.status })),
-      });
+      cb?.({ ok: true, ...(await roomSnapshot(classCode)) });
+    });
+
+    // A promoted captain joins the same control channel as the host, authorized
+    // by their own participant id (no host key). They also stay in their private
+    // channel so `captain-demoted` reaches them.
+    socket.on('captain-join-room', async (payload = {}, cb) => {
+      const classCode = sanitizeCode(payload.classCode);
+      const cls = await verifyController(classCode, payload);
+      if (!cls) return cb?.({ ok: false, error: 'Captain authorization required' });
+      socket.data.role = 'captain';
+      socket.data.classCode = classCode;
+      socket.data.participantId = payload.captainId;
+      socket.join(rooms.host(classCode));
+      socket.join(rooms.class(classCode));
+      if (payload.captainId) socket.join(rooms.participant(payload.captainId));
+
+      cb?.({ ok: true, ...(await roomSnapshot(classCode)) });
+    });
+
+    // ---- host-only: promote / demote a captain ----
+    socket.on('host-make-captain', async (payload = {}, cb) => {
+      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
+      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      try {
+        const p = await participantService.setCaptain(payload.participantId, cls.classCode, true);
+        cb?.({ ok: true, name: p?.name });
+      } catch (e) {
+        cb?.({ ok: false, error: e.message || 'Could not promote student' });
+      }
+    });
+
+    socket.on('host-remove-captain', async (payload = {}, cb) => {
+      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
+      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      try {
+        const p = await participantService.setCaptain(payload.participantId, cls.classCode, false);
+        cb?.({ ok: true, name: p?.name });
+      } catch (e) {
+        cb?.({ ok: false, error: e.message || 'Could not demote captain' });
+      }
     });
 
     socket.on('student-join-waiting', async (payload = {}) => {
@@ -69,51 +139,51 @@ export function initSocket(io) {
 
     // ---- host mutations (also exposed over REST; both verify the host key) ----
     socket.on('host-allow-student', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
       await participantService.admit(payload.participantId, cls.classCode);
       cb?.({ ok: true });
     });
 
     socket.on('host-reject-student', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
       await participantService.reject(payload.participantId, cls.classCode);
       cb?.({ ok: true });
     });
 
     socket.on('host-remove-student', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
       await participantService.remove(payload.participantId, cls.classCode);
       cb?.({ ok: true });
     });
 
     socket.on('host-lock-room', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
       await classService.setLock(cls.classCode, true);
       cb?.({ ok: true });
     });
 
     socket.on('host-unlock-room', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
       await classService.setLock(cls.classCode, false);
       cb?.({ ok: true });
     });
 
     socket.on('host-end-class', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
       await classService.endClass(cls.classCode);
       cb?.({ ok: true });
     });
 
-    // ---- host mutes a single student's microphone (host-only) ----
+    // ---- mute a single student's microphone (host or captain) ----
     socket.on('host-mute-student', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
 
       const p = await store.getParticipantById(payload.participantId);
       if (!p || p.classCode !== cls.classCode) {
@@ -133,10 +203,10 @@ export function initSocket(io) {
       cb?.({ ok: true, name: p.name });
     });
 
-    // ---- host mutes every student at once (host-only) ----
+    // ---- mute every student at once (host or captain) ----
     socket.on('host-mute-all', async (payload = {}, cb) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
-      if (!cls) return cb?.({ ok: false, error: 'Invalid host key' });
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
+      if (!cls) return cb?.({ ok: false, error: 'Not authorized' });
 
       // 1) Reliable path: one broadcast to the class — every student's client
       //    mutes its local mic + shows the notice. The host doesn't listen for
@@ -155,7 +225,7 @@ export function initSocket(io) {
 
     // ---- screen share status relay (LiveKit carries the media itself) ----
     socket.on('host-screen-share', async (payload = {}) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
       if (!cls) return;
       getIO()
         ?.to(rooms.class(cls.classCode))
@@ -164,9 +234,9 @@ export function initSocket(io) {
         });
     });
 
-    // ---- optional host announcements (host -> everyone, read-only) ----
+    // ---- optional announcements (host/captain -> everyone, read-only) ----
     socket.on('host-announcement', async (payload = {}) => {
-      const cls = await verifyHost(sanitizeCode(payload.classCode), payload.hostKey);
+      const cls = await verifyController(sanitizeCode(payload.classCode), payload);
       if (!cls) return;
       const message = sanitizeText(payload.message || '', 300);
       if (!message) return;

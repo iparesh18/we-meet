@@ -24,7 +24,8 @@ export const getPublic = asyncHandler(async (req, res) => {
 });
 
 export const getHost = asyncHandler(async (req, res) => {
-  res.json(await classService.getForHost(req.classSession.classCode));
+  const includePrivate = req.controller?.role === 'host';
+  res.json(await classService.getForHost(req.classSession.classCode, { includePrivate }));
 });
 
 export const lock = asyncHandler(async (req, res) => {

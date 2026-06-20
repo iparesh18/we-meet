@@ -8,6 +8,10 @@ const participantSchema = new mongoose.Schema(
     socketId: { type: String, default: null },
     livekitIdentity: { type: String, default: null },
     deviceId: { type: String, default: null, index: true },
+    // 'captain' is a student the host has promoted to a co-host. Captains get
+    // host powers (admit/mute/lock/etc.) authorized by their own participant id,
+    // so demoting them (role -> 'student') revokes those powers instantly.
+    role: { type: String, enum: ['student', 'captain'], default: 'student', index: true },
     status: {
       type: String,
       enum: ['waiting', 'admitted', 'rejected', 'removed', 'left'],

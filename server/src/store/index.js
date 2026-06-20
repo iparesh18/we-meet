@@ -113,6 +113,7 @@ export async function createParticipant(data) {
     socketId: data.socketId || null,
     livekitIdentity: data.livekitIdentity || null,
     deviceId: data.deviceId || null,
+    role: data.role || 'student',
     status: data.status || 'waiting',
     requestedAt: data.requestedAt || now,
     admittedAt: data.admittedAt || null,

@@ -10,6 +10,7 @@ import ControlButton from '../components/ControlButton.jsx';
 import ConnectionStatus from '../components/ConnectionStatus.jsx';
 import VideoDisabledStage from '../components/VideoDisabledStage.jsx';
 import RemoteMuteHandler from '../components/RemoteMuteHandler.jsx';
+import StudentPrivacyGuard from '../components/StudentPrivacyGuard.jsx';
 import { api } from '../lib/api.js';
 import { getSocket } from '../lib/socket.js';
 import { loadParticipant, clearParticipant } from '../lib/storage.js';
@@ -36,6 +37,8 @@ export default function StudentRoom() {
   const [layout, setLayout] = useState('speaker');
   const [announcement, setAnnouncement] = useState(null);
   const [mutedByHost, setMutedByHost] = useState(false);
+  // LiveKit identities allowed to subscribe to this student's media (host + captains).
+  const [captains, setCaptains] = useState([]);
   const prefs = participant?.prefs || { cam: true, mic: true };
   const leftRef = useRef(false);
 
@@ -63,7 +66,14 @@ export default function StudentRoom() {
         try {
           const data = await api.studentToken(pid, participant.name);
           if (!active) return;
-          setConn({ token: data.token, url: data.url });
+          // hostIdentity tells the privacy guard which identity may subscribe to
+          // this student; fall back to the deterministic format if absent.
+          setConn({
+            token: data.token,
+            url: data.url,
+            hostIdentity: data.hostIdentity || `host-${code}`,
+          });
+          setCaptains(data.captains || []);
           setPhase('live');
         } catch (tokenErr) {
           if (!active) return;
@@ -94,11 +104,18 @@ export default function StudentRoom() {
     const onEnded = () => navigate('/ended', { replace: true });
     const onAnnouncement = (a) => setAnnouncement(a);
     const onConnect = () => socket.emit('student-join-live', { classCode: code, participantId: pid });
+    // Keep the allowed-subscriber set in sync as the host promotes/demotes captains.
+    const onParticipants = ({ admitted: a }) =>
+      setCaptains((a || []).filter((p) => p.role === 'captain').map((p) => `captain-${p.id}`));
+    // This student was promoted to captain — switch to the co-host control view.
+    const onPromoted = () => navigate(`/captain/${code}`, { replace: true });
 
     socket.on('student-removed', onRemoved);
     socket.on('room-ended', onEnded);
     socket.on('announcement', onAnnouncement);
     socket.on('connect', onConnect);
+    socket.on('participants-updated', onParticipants);
+    socket.on('captain-promoted', onPromoted);
 
     return () => {
       active = false;
@@ -106,6 +123,8 @@ export default function StudentRoom() {
       socket.off('room-ended', onEnded);
       socket.off('announcement', onAnnouncement);
       socket.off('connect', onConnect);
+      socket.off('participants-updated', onParticipants);
+      socket.off('captain-promoted', onPromoted);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
@@ -207,11 +226,12 @@ export default function StudentRoom() {
       className="flex h-dvh flex-col bg-slate-950"
     >
       <RemoteMuteHandler onMuted={handleMutedByHost} />
+      <StudentPrivacyGuard hostIdentity={conn.hostIdentity} captains={captains} />
       {TopBar}
       {Banner}
       {MutedBanner}
       <div className="min-h-0 flex-1">
-        <Stage layout={layout} />
+        <Stage layout={layout} studentView />
       </div>
 
       <div className="flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">

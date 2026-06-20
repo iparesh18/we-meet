@@ -39,29 +39,42 @@ async function request(path, { method = 'GET', body, query } = {}) {
   return data;
 }
 
+// Control endpoints (admit/reject/remove/lock/unlock/end/attendance/roster) are
+// authorized for BOTH the host and a captain. `auth` may be a hostKey string
+// (back-compat with the host pages) or an object `{ hostKey }` / `{ captainId }`.
+function authParams(auth) {
+  if (typeof auth === 'string') return { hostKey: auth };
+  if (auth && auth.captainId) return { captainId: auth.captainId };
+  if (auth && auth.hostKey) return { hostKey: auth.hostKey };
+  return {};
+}
+
 export const api = {
   createClass: (title) => request('/api/classes/create', { method: 'POST', body: { title } }),
   getPublicClass: (code) => request(`/api/classes/${code}/public`),
-  getHostClass: (code, hostKey) => request(`/api/classes/${code}/host`, { query: { hostKey } }),
-  lock: (code, hostKey) => request(`/api/classes/${code}/lock`, { method: 'POST', body: { hostKey } }),
-  unlock: (code, hostKey) => request(`/api/classes/${code}/unlock`, { method: 'POST', body: { hostKey } }),
-  end: (code, hostKey) => request(`/api/classes/${code}/end`, { method: 'POST', body: { hostKey } }),
+  getHostClass: (code, auth) => request(`/api/classes/${code}/host`, { query: authParams(auth) }),
+  lock: (code, auth) => request(`/api/classes/${code}/lock`, { method: 'POST', body: authParams(auth) }),
+  unlock: (code, auth) => request(`/api/classes/${code}/unlock`, { method: 'POST', body: authParams(auth) }),
+  end: (code, auth) => request(`/api/classes/${code}/end`, { method: 'POST', body: authParams(auth) }),
 
   joinRequest: (payload) => request('/api/participants/join-request', { method: 'POST', body: payload }),
-  admit: (participantId, code, hostKey) =>
-    request(`/api/participants/${participantId}/admit`, { method: 'POST', body: { classCode: code, hostKey } }),
-  reject: (participantId, code, hostKey) =>
-    request(`/api/participants/${participantId}/reject`, { method: 'POST', body: { classCode: code, hostKey } }),
-  remove: (participantId, code, hostKey) =>
-    request(`/api/participants/${participantId}/remove`, { method: 'POST', body: { classCode: code, hostKey } }),
+  admit: (participantId, code, auth) =>
+    request(`/api/participants/${participantId}/admit`, { method: 'POST', body: { classCode: code, ...authParams(auth) } }),
+  reject: (participantId, code, auth) =>
+    request(`/api/participants/${participantId}/reject`, { method: 'POST', body: { classCode: code, ...authParams(auth) } }),
+  remove: (participantId, code, auth) =>
+    request(`/api/participants/${participantId}/remove`, { method: 'POST', body: { classCode: code, ...authParams(auth) } }),
   participantStatus: (participantId) => request(`/api/participants/status/${participantId}`),
-  listParticipants: (code, hostKey) => request(`/api/participants/${code}`, { query: { hostKey } }),
+  listParticipants: (code, auth) => request(`/api/participants/${code}`, { query: authParams(auth) }),
 
   hostToken: (code, hostKey, name) =>
     request('/api/livekit/host-token', { method: 'POST', body: { classCode: code, hostKey, name } }),
   studentToken: (participantId, name) =>
     request('/api/livekit/student-token', { method: 'POST', body: { participantId, name } }),
+  // A promoted student swaps their student token for a captain (co-host) token.
+  captainToken: (code, captainId, name) =>
+    request('/api/livekit/captain-token', { method: 'POST', body: { classCode: code, captainId, name } }),
 
-  attendance: (code, hostKey) => request(`/api/attendance/${code}`, { query: { hostKey } }),
+  attendance: (code, auth) => request(`/api/attendance/${code}`, { query: authParams(auth) }),
   health: () => request('/api/health'),
 };

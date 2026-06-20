@@ -19,6 +19,8 @@ export default function RightPanel({
   onRemove,
   onMute,
   onMuteAll,
+  onMakeCaptain,
+  onRemoveCaptain,
   muteAllBusy,
   onSendAnnouncement,
   onClose,
@@ -77,6 +79,8 @@ export default function RightPanel({
             onRemove={onRemove}
             onMute={onMute}
             onMuteAll={onMuteAll}
+            onMakeCaptain={onMakeCaptain}
+            onRemoveCaptain={onRemoveCaptain}
             muteAllBusy={muteAllBusy}
             busyIds={busyIds}
           />

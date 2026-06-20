@@ -15,6 +15,7 @@ function admittedView(p) {
     status: p.status,
     admittedAt: p.admittedAt,
     leftAt: p.leftAt,
+    role: p.role || 'student',
   };
 }
 
@@ -128,6 +129,41 @@ export async function remove(participantId, classCode) {
   getIO()?.to(rooms.participant(participantId)).emit('student-removed', { participantId });
   await emitLists(p.classCode);
   return updated;
+}
+
+/**
+ * Promote an admitted student to captain (a co-host) or demote them back.
+ * Notifies the participant so their client can swap to / from the host UI, and
+ * refreshes the roster so other students update who may subscribe to their media.
+ */
+export async function setCaptain(participantId, classCode, makeCaptain) {
+  const p = await store.getParticipantById(participantId);
+  if (!p) throw new ApiError(404, 'Participant not found');
+  assertSameClass(p, classCode);
+  if (p.status !== 'admitted') {
+    throw new ApiError(400, 'Only students who are in the class can be made captain');
+  }
+
+  const role = makeCaptain ? 'captain' : 'student';
+  if ((p.role || 'student') === role) return p;
+
+  const updated = await store.updateParticipant(participantId, { role });
+  getIO()
+    ?.to(rooms.participant(participantId))
+    .emit(makeCaptain ? 'captain-promoted' : 'captain-demoted', {
+      participantId,
+      classCode: p.classCode,
+    });
+  await emitLists(p.classCode);
+  return updated;
+}
+
+/** Identities (`captain-<id>`) of every admitted captain in the class. */
+export async function captainIdentities(classCode) {
+  const all = await store.getParticipantsByClass(classCode);
+  return all
+    .filter((p) => p.role === 'captain' && p.status === 'admitted')
+    .map((p) => `captain-${p.id}`);
 }
 
 /** Explicit "Leave" (student clicked leave / cancelled waiting). */

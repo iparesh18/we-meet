@@ -1,6 +1,6 @@
 import { VideoTrack } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { MicOff, Mic, MonitorUp, Pin, PinOff } from 'lucide-react';
+import { MicOff, Mic, MonitorUp, Pin, PinOff, Crown } from 'lucide-react';
 
 function initials(name) {
   if (!name) return '?';
@@ -95,6 +95,11 @@ export default function VideoTile({
         )}
         {role === 'host' && !isScreen && (
           <span className="chip bg-brand-500/90 px-2 py-0.5 text-xs text-white">Host</span>
+        )}
+        {role === 'captain' && !isScreen && (
+          <span className="chip bg-brand-500/90 px-2 py-0.5 text-xs text-white">
+            <Crown size={11} /> Captain
+          </span>
         )}
       </div>
 

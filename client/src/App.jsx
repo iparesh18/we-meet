@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import HomePage from './pages/HomePage.jsx';
 import HostRoom from './pages/HostRoom.jsx';
+import CaptainRoom from './pages/CaptainRoom.jsx';
 import JoinPage from './pages/JoinPage.jsx';
 import WaitingRoom from './pages/WaitingRoom.jsx';
 import StudentRoom from './pages/StudentRoom.jsx';
@@ -14,6 +15,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/host/:classCode" element={<HostRoom />} />
+      <Route path="/captain/:classCode" element={<CaptainRoom />} />
       <Route path="/join/:classCode" element={<JoinPage />} />
       <Route path="/waiting/:classCode" element={<WaitingRoom />} />
       <Route path="/student/:classCode" element={<StudentRoom />} />
