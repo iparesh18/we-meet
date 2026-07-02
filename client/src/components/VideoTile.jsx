@@ -51,11 +51,8 @@ export default function VideoTile({
           trackRef={trackRef}
           playsInline
           // Screen share must never crop (text/slides stay readable) → contain.
-          // Camera tiles fill the frame → cover, and are mirrored for everyone
-          // (self-view + remote). Screen share is never mirrored.
-          className={`h-full w-full ${
-            isScreen ? 'bg-slate-900 object-contain' : 'object-cover -scale-x-100'
-          }`}
+          // Camera tiles fill the frame → cover.
+          className={`h-full w-full ${isScreen ? 'bg-slate-900 object-contain' : 'object-cover'}`}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900">

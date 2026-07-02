@@ -126,7 +126,7 @@ export default function JoinPage() {
                 autoPlay
                 playsInline
                 muted
-                className="h-full w-full -scale-x-100 object-cover"
+                className="h-full w-full object-cover"
               />
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-slate-400">

@@ -3,6 +3,23 @@ import { ConnectionState } from 'livekit-client';
 import { Mic, MicOff, Video, VideoOff, MonitorUp, MonitorX } from 'lucide-react';
 import ControlButton from './ControlButton.jsx';
 
+function getScreenShareOptions() {
+  const isTouchDevice =
+    typeof window !== 'undefined' &&
+    ((window.matchMedia?.('(pointer: coarse)')?.matches ?? false) || navigator.maxTouchPoints > 0);
+
+  return {
+    video: { displaySurface: 'browser' },
+    contentHint: 'detail',
+    preferCurrentTab: true,
+    selfBrowserSurface: 'include',
+    surfaceSwitching: 'include',
+    resolution: isTouchDevice
+      ? { width: 1280, height: 720, frameRate: 15 }
+      : { width: 1920, height: 1080, frameRate: 15 },
+  };
+}
+
 /**
  * Mic / camera (and optional screen-share) buttons wired to the LiveKit local
  * participant. Must be rendered inside a <LiveKitRoom>.
@@ -27,7 +44,7 @@ export default function MediaControls({ withScreenShare = false, onScreenShareCh
     if (!localParticipant) return;
     const next = !isScreenShareEnabled;
     try {
-      await localParticipant.setScreenShareEnabled(next);
+      await localParticipant.setScreenShareEnabled(next, getScreenShareOptions());
       onScreenShareChange?.(next);
     } catch {
       /* user dismissed the screen picker — no-op */
@@ -53,7 +70,7 @@ export default function MediaControls({ withScreenShare = false, onScreenShareCh
       {withScreenShare && (
         <ControlButton
           icon={isScreenShareEnabled ? MonitorX : MonitorUp}
-          label={isScreenShareEnabled ? 'Stop Share' : 'Share'}
+          label={isScreenShareEnabled ? 'Stop Tab' : 'Share Tab'}
           tone={isScreenShareEnabled ? 'primary' : 'default'}
           onClick={toggleScreen}
           disabled={!connected}
